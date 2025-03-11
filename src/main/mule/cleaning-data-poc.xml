@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:file="http://www.mulesoft.org/schema/mule/file"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="b5fe1ef3-4db2-4b42-952d-a4a182d5bd1b" >
+		<http:listener-connection host="0.0.0.0" port="8089" />
+	</http:listener-config>
+	<flow name="cleaning-uselessdata-pocFlow" doc:id="e65eb555-a1bf-43ec-b9d3-32d8f2f4582e" >
+		<http:listener doc:name="Listener" doc:id="f0b16c83-2188-4e7b-93a1-a01e04bdfa8d" config-ref="HTTP_Listener_config" path="/test"/>
+		<file:read doc:name="Reading File" doc:id="771660c9-f410-4f23-a151-0840313f47ea" path="C:\Users\abelo\OneDrive\Desktop\2025\InsideTrack\Sr DI Engineer Tech Exercise 2025 Data Set - AK.xlsx" outputMimeType="application/xlsx"/>
+		<ee:transform doc:name="Converting XLSX into JSON" doc:id="7ce996b6-2141-4055-b94d-34758e1af09e" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload."Courses 20240515 FINAL" map ( sheet2 , indexOfSheet2 ) -> {
+	"student_id": sheet2."id" default "",
+	"course_id" : sheet2."course_id" default "",
+	"enrl_status" : sheet2."enrl_status" default ""
+}]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="student" ><![CDATA[%dw 2.0
+output application/json
+---
+payload."Terms 20240415 FINAL" map ( sheet2 , indexOfSheet2 ) -> {
+	"student_id": sheet2
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<ee:transform doc:name="Sorting and Grouping Student Enrollment Status" doc:id="015da47c-8e87-463b-950a-3c6ed9d3e806" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+(payload 
+    orderBy (enroll) -> 
+    ((enroll.enrl_status) splitBy (" "))[1]) 
+    groupBy (item) -> 
+    item.student_id]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="student" ><![CDATA[%dw 2.0
+output application/json
+---
+vars.student map ((item, index) -> {
+    ((item)[0])
+} )]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<ee:transform doc:name="Data Enrichment" doc:id="00a975ac-4703-4bdc-9189-685682583a52" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+var m = payload
+var temp = (payload pluck ((v, k) -> {
+    (k): v
+})) map ((item, index) -> {
+    "key" : (m[index][(sizeOf(m[index]) - 1)])
+})
+output application/json
+---
+ temp map ((item, index) -> {
+    ((item)[0])
+} )]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<ee:transform doc:name="Final Output" doc:id="a9d24de0-946d-431c-b59e-de48783d9ded" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+fun findIndex(studentId) = {
+       "key" : ((vars.student map ((item, index) -> {
+    index: (index),
+    student_id : item.student_id
+    
+     }) filter ((item, index) ->  item.student_id == studentId) )[0].index) 
+}
+output application/json
+---
+payload map ((item, index) -> {
+	"student_id" : item.student_id,
+	"first_name"  : vars.student[findIndex(item.student_id).key default -1].first_name default "",
+	"last_name" : vars.student[findIndex(item.student_id).key default -1].last_name default "",
+	"preferred_name" : vars.student[findIndex(item.student_id).key default -1].preferred_name default "",
+	"mobile_phone" : vars.student[findIndex(item.student_id).key default -1].mobile_phone default "",
+	"personal_email" : vars.student[findIndex(item.student_id).key default -1].personal_email default "",
+	"university_email" : vars.student[findIndex(item.student_id).key default -1].university_email default "",
+	"course_id" : item."course_id" default "",
+	"enrl_status" : item."enrl_status" default ""
+
+	
+})]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="d8880423-2ffa-49dc-a978-faf987842c5a" message='"Data processing is completed"'/>
+	</flow>
+</mule>
